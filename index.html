@@ -4,8 +4,18 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PianoVerse - Modern Interactive Music App</title>
+    <script>
+        // Load manifest only if on a web server to avoid CORS errors when opening as local file
+        if (window.location.protocol.startsWith('http')) {
+            const link = document.createElement('link');
+            link.rel = 'manifest';
+            link.href = 'manifest.json';
+            document.head.appendChild(link);
+        }
+    </script>
     <link rel="stylesheet" href="style.css">
-    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="assets/icon.png">
+    <link rel="apple-touch-icon" href="assets/icon.png">
     <meta name="theme-color" content="#1a1c2c">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
 </head>
@@ -13,14 +23,12 @@
     <div class="background-overlay"></div>
     <div class="app-container">
         <header>
-            <div class="logo">
-                <h1>Piano<span>Verse</span></h1>
-            </div>
-            <div class="top-controls">
-                <button id="fullscreen-btn" title="Fullscreen">
-                    <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
-                </button>
-            </div>
+        <div class="logo">
+            <img src="assets/icon.png" alt="PianoVerse" id="main-logo">
+        </div>
+            <button id="fullscreen-btn" class="icon-btn" title="Toggle Fullscreen">
+                <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+            </button>
         </header>
 
         <main>
@@ -28,6 +36,7 @@
                 <div class="control-group">
                     <label>Octave</label>
                     <div class="segmented-control">
+                        <button class="octave-btn" data-octave="1">Drums (1)</button>
                         <button class="octave-btn" data-octave="2">Low (2)</button>
                         <button class="octave-btn active" data-octave="3">Mid (3)</button>
                         <button class="octave-btn" data-octave="4">High (4)</button>
@@ -91,6 +100,9 @@
                             <option value="rock">Rock</option>
                             <option value="techno">Techno</option>
                             <option value="folk">Tamil Folk</option>
+                            <option value="disco">Disco</option>
+                            <option value="retro">80s Retro</option>
+                            <option value="kuthu">Fast Kuthu</option>
                         </select>
                         <button id="beat-toggle" class="icon-btn" title="Start/Stop Beat">
                             <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
@@ -133,8 +145,8 @@
 
     <script src="script.js"></script>
     <script>
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('service-worker.js');
+        if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+            navigator.serviceWorker.register('service-worker.js').catch(() => {});
         }
     </script>
 </body>
