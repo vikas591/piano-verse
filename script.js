@@ -21,9 +21,9 @@ class AudioEngine {
         // Tone Profiles
         this.profiles = {
             'classic': { type: 'allpass', freq: 1000, Q: 1 },
-            'warm': { type: 'lowpass', freq: 800, Q: 1 },
-            'bright': { type: 'highpass', freq: 1200, Q: 1 },
-            'heavy': { type: 'lowshelf', freq: 400, Q: 0.5 }
+            'warm': { type: 'lowpass', freq: 600, Q: 1.2 },
+            'bright': { type: 'highpass', freq: 1500, Q: 1.5 },
+            'heavy': { type: 'lowshelf', freq: 500, Q: 0.8, gain: 15 } // Boost bass for Rock
         };
 
         this.notes = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
@@ -64,6 +64,13 @@ class AudioEngine {
         }
         
         const fullNote = `${noteName}${octave}`;
+        
+        // Handle Drum Octave (1)
+        if (octave === 1) {
+            this.playDrumKit(noteName);
+            return;
+        }
+
         if (!this.samples[fullNote]) return;
 
         // Stop existing node if playing to prevent overlap (optional based on feel)
@@ -92,11 +99,48 @@ class AudioEngine {
         this.filter.type = p.type;
         this.filter.frequency.setTargetAtTime(p.freq, this.ctx.currentTime, 0.1);
         this.filter.Q.setTargetAtTime(p.Q, this.ctx.currentTime, 0.1);
+        if (p.gain !== undefined) {
+            this.filter.gain.setTargetAtTime(p.gain, this.ctx.currentTime, 0.1);
+        }
     }
 
     setVolume(val) {
         this.volume = parseFloat(val);
         this.masterGain.gain.setTargetAtTime(this.volume, this.ctx.currentTime, 0.1);
+    }
+
+    playDrumKit(note) {
+        if (!window.appInstance || !window.appInstance.beatPlayer) return;
+        const bp = window.appInstance.beatPlayer;
+        const time = this.ctx.currentTime;
+
+        const drumLogic = {
+            'C': () => bp.playKick(time),
+            'Db': () => bp.playBass(time),
+            'D': () => bp.playSnare(time),
+            'Eb': () => bp.playChapg(time),
+            'E': () => bp.playHiHat(time),
+            'F': () => bp.playHiHatOpen(time),
+            'Gb': () => bp.playShaker(time),
+            'G': () => bp.playKick(time),
+            'Ab': () => bp.playClap(time),
+            'A': () => bp.playTom(time),
+            'Bb': () => bp.playHiHat(time),
+            'B': () => bp.playBass(time)
+        };
+
+        if (drumLogic[note]) drumLogic[note]();
+    }
+
+    engineTriggerDrum(type) {
+        // Helper to trigger drum sound from the AudioEngine
+        // This is a bridge to the BeatPlayer's synthesis logic
+        if (!window.appInstance || !window.appInstance.beatPlayer) return;
+        const time = this.ctx.currentTime;
+        const bp = window.appInstance.beatPlayer;
+        if (type === 'kick') bp.playKick(time);
+        if (type === 'snare') bp.playSnare(time);
+        if (type === 'hihat') bp.playHiHat(time);
     }
 }
 
@@ -122,7 +166,17 @@ class KeyboardUI {
         const notes = this.engine.notes;
         const baseOctave = this.engine.octave;
 
-        // Render 2 octaves
+        // Render 2 octaves or 1 drum kit
+        if (baseOctave === 1) {
+            this.piano.classList.add('drum-mode');
+            this.renderDrumLabels();
+        } else {
+            this.piano.classList.remove('drum-mode');
+            this.renderClassicKeys(notes, baseOctave);
+        }
+    }
+
+    renderClassicKeys(notes, baseOctave) {
         for (let octOffset = 0; octOffset < 2; octOffset++) {
             const currentOctave = baseOctave + octOffset;
             notes.forEach((note) => {
@@ -135,19 +189,39 @@ class KeyboardUI {
                 if (!isBlack) {
                     const label = document.createElement('span');
                     label.className = 'key-label';
-                    // Mapping for the first octave
                     if (octOffset === 0) {
                         const kbd = Object.keys(this.keyMap).find(k => this.keyMap[k] === note);
                         label.innerText = kbd ? kbd.toUpperCase() : '';
-                    } else {
-                        label.innerText = ''; // Keep it clean for the second octave
                     }
                     key.appendChild(label);
                 }
-
                 this.piano.appendChild(key);
             });
         }
+    }
+
+    renderDrumLabels() {
+        const notes = this.engine.notes;
+        notes.forEach(note => {
+            const isBlack = note.includes('b');
+            const key = document.createElement('div');
+            key.className = `key ${isBlack ? 'black' : 'white'}`;
+            key.dataset.note = note;
+            key.dataset.octave = 1;
+
+            const label = document.createElement('span');
+            label.className = 'key-label drum-label';
+            
+            const drumMap = {
+                'C': 'KICK', 'Db': 'BASS', 'D': 'SNARE', 'Eb': 'CHAPG', 
+                'E': 'HAT-C', 'F': 'HAT-O', 'Gb': 'SHAKER', 'G': 'KICK-2', 
+                'Ab': 'CLAP', 'A': 'TOM', 'Bb': 'CYMB', 'B': 'BASS-2'
+            };
+            label.innerText = drumMap[note] || note;
+
+            key.appendChild(label);
+            this.piano.appendChild(key);
+        });
     }
 
     attachEvents() {
@@ -163,7 +237,7 @@ class KeyboardUI {
 
         // Touch support
         this.piano.addEventListener('touchstart', (e) => {
-            e.preventDefault();
+            if (e.cancelable) e.preventDefault();
             const key = e.target.closest('.key');
             if (key) this.pressKey(key);
         }, { passive: false });
@@ -210,6 +284,7 @@ class Recorder {
         this.sequence = [];
         this.startTime = 0;
         this.savedRecordings = JSON.parse(localStorage.getItem('piano_recordings') || '[]');
+        this.currentPlayingId = null;
     }
 
     start() {
@@ -249,18 +324,28 @@ class Recorder {
     }
 
     delete(id) {
+        if (this.currentPlayingId === id) {
+            this.currentPlayingId = null; // This will break the play loop
+        }
         this.savedRecordings = this.savedRecordings.filter(r => r.id !== id);
         localStorage.setItem('piano_recordings', JSON.stringify(this.savedRecordings));
     }
 
-    async play(sequence = this.sequence) {
+    async play(sequence = this.sequence, id = null) {
         if (sequence.length === 0) return;
         
+        this.currentPlayingId = id;
         const start = Date.now();
         for (const item of sequence) {
+            // Check if playback was stopped or sequence deleted
+            if (id && this.currentPlayingId !== id) break;
+
             const delay = item.time - (Date.now() - start);
             await new Promise(r => setTimeout(r, Math.max(0, delay)));
             
+            // Re-check after delay
+            if (id && this.currentPlayingId !== id) break;
+
             // Visual feedback
             const key = document.querySelector(`[data-note="${item.note}"][data-octave="${item.octave}"]`);
             if (key) {
@@ -269,6 +354,7 @@ class Recorder {
             }
             this.engine.playNote(item.note, item.octave);
         }
+        if (this.currentPlayingId === id) this.currentPlayingId = null;
     }
 }
 
@@ -334,7 +420,15 @@ class SongPlayer {
                 { note: 'F', octave: 3, time: 4000 }, { note: 'F', octave: 3, time: 4500 },
                 { note: 'E', octave: 3, time: 5000 }, { note: 'E', octave: 3, time: 5500 },
                 { note: 'D', octave: 3, time: 6000 }, { note: 'D', octave: 3, time: 6500 },
-                { note: 'C', octave: 3, time: 7000 }
+                { note: 'C', octave: 3, time: 7000 },
+                { note: 'G', octave: 3, time: 8000 }, { note: 'G', octave: 3, time: 8500 },
+                { note: 'F', octave: 3, time: 9000 }, { note: 'F', octave: 3, time: 9500 },
+                { note: 'E', octave: 3, time: 10000 }, { note: 'E', octave: 3, time: 10500 },
+                { note: 'D', octave: 3, time: 11000 },
+                { note: 'G', octave: 3, time: 12000 }, { note: 'G', octave: 3, time: 12500 },
+                { note: 'F', octave: 3, time: 13000 }, { note: 'F', octave: 3, time: 13500 },
+                { note: 'E', octave: 3, time: 14000 }, { note: 'E', octave: 3, time: 14500 },
+                { note: 'D', octave: 3, time: 15000 }
             ],
             'jingle': [
                 { note: 'E', octave: 3, time: 0 }, { note: 'E', octave: 3, time: 400 }, { note: 'E', octave: 3, time: 800 },
@@ -357,18 +451,26 @@ class SongPlayer {
                 { note: 'Bb', octave: 3, time: 3200 }, { note: 'Bb', octave: 3, time: 3600 },
                 { note: 'Ab', octave: 3, time: 4000 }, { note: 'Ab', octave: 3, time: 4400 },
                 { note: 'Bb', octave: 3, time: 4800 }, { note: 'C', octave: 4, time: 5200 },
-                { note: 'Bb', octave: 3, time: 5600 }
+                { note: 'Bb', octave: 3, time: 5600 }, { note: 'Gb', octave: 3, time: 6000 },
+                { note: 'F', octave: 3, time: 6400 }, { note: 'Eb', octave: 3, time: 6800 },
+                { note: 'F', octave: 3, time: 7200 }, { note: 'Gb', octave: 3, time: 7600 },
+                { note: 'Ab', octave: 3, time: 8000 }, { note: 'Bb', octave: 3, time: 8400 }
             ],
             'kannaana-kanney': [
                 { note: 'Bb', octave: 4, time: 0 }, { note: 'D', octave: 4, time: 400 }, { note: 'Eb', octave: 4, time: 800 },
                 { note: 'Eb', octave: 4, time: 1400 }, { note: 'Eb', octave: 4, time: 1800 },
                 { note: 'D', octave: 4, time: 2400 }, { note: 'Eb', octave: 4, time: 2800 }, { note: 'F', octave: 4, time: 3200 }, { note: 'Eb', octave: 4, time: 3600 },
-                { note: 'Eb', octave: 4, time: 4200 }, { note: 'Eb', octave: 4, time: 4600 }
+                { note: 'Eb', octave: 4, time: 4200 }, { note: 'Eb', octave: 4, time: 4600 },
+                { note: 'F', octave: 4, time: 5200 }, { note: 'G', octave: 4, time: 5600 }, { note: 'F', octave: 4, time: 6000 },
+                { note: 'Eb', octave: 4, time: 6400 }, { note: 'D', octave: 4, time: 6800 }, { note: 'C', octave: 4, time: 7200 }
             ],
             'vaseegara': [
                 { note: 'Gb', octave: 4, time: 0 }, { note: 'Gb', octave: 4, time: 250 }, { note: 'Gb', octave: 4, time: 500 }, { note: 'Gb', octave: 4, time: 750 },
                 { note: 'E', octave: 4, time: 1000 }, { note: 'E', octave: 4, time: 1250 }, { note: 'D', octave: 4, time: 1500 }, { note: 'Db', octave: 4, time: 1750 },
-                { note: 'Db', octave: 4, time: 2000 }, { note: 'D', octave: 4, time: 2250 }, { note: 'E', octave: 4, time: 2500 }
+                { note: 'Db', octave: 4, time: 2000 }, { note: 'D', octave: 4, time: 2250 }, { note: 'E', octave: 4, time: 2500 },
+                { note: 'Gb', octave: 4, time: 3000 }, { note: 'Gb', octave: 4, time: 3250 }, { note: 'Gb', octave: 4, time: 3500 },
+                { note: 'A', octave: 4, time: 4000 }, { note: 'G', octave: 4, time: 4500 }, { note: 'Gb', octave: 4, time: 5000 },
+                { note: 'E', octave: 4, time: 5500 }, { note: 'D', octave: 4, time: 6000 }, { note: 'Db', octave: 4, time: 6500 }
             ],
             'ennodu-nee': [
                 { note: 'Eb', octave: 3, time: 0 }, { note: 'Ab', octave: 3, time: 400 }, { note: 'Gb', octave: 3, time: 800 }, { note: 'Ab', octave: 3, time: 1200 },
@@ -459,6 +561,35 @@ class BeatPlayer {
                 { drum: 'snare', beat: 2.66 },
                 { drum: 'kick', beat: 3 }, { drum: 'kick', beat: 3.33 },
                 { drum: 'snare', beat: 3.66 }
+            ],
+            'disco': [
+                { drum: 'kick', beat: 0 }, { drum: 'hihat', beat: 0 },
+                { drum: 'hihat', beat: 0.5 },
+                { drum: 'snare', beat: 1 }, { drum: 'hihat', beat: 1 },
+                { drum: 'hihat', beat: 1.5 },
+                { drum: 'kick', beat: 2 }, { drum: 'hihat', beat: 2 },
+                { drum: 'hihat', beat: 2.5 },
+                { drum: 'snare', beat: 3 }, { drum: 'hihat', beat: 3 },
+                { drum: 'hihat', beat: 3.5 }
+            ],
+            'retro': [
+                { drum: 'kick', beat: 0 }, { drum: 'kick', beat: 0.75 },
+                { drum: 'snare', beat: 1 },
+                { drum: 'kick', beat: 2 },
+                { drum: 'snare', beat: 3 }, { drum: 'hihat', beat: 3.5 }
+            ],
+            'kuthu': [
+                { drum: 'kick', beat: 0 }, { drum: 'kick', beat: 0.25 },
+                { drum: 'snare', beat: 0.5 },
+                { drum: 'kick', beat: 0.75 }, { drum: 'kick', beat: 1 },
+                { drum: 'snare', beat: 1.25 },
+                { drum: 'kick', beat: 1.5 }, { drum: 'kick', beat: 1.75 },
+                { drum: 'snare', beat: 2 },
+                { drum: 'kick', beat: 2.25 }, { drum: 'kick', beat: 2.5 },
+                { drum: 'snare', beat: 2.75 },
+                { drum: 'kick', beat: 3 }, { drum: 'kick', beat: 3.25 },
+                { drum: 'snare', beat: 3.5 },
+                { drum: 'kick', beat: 3.75 }
             ]
         };
     }
@@ -511,16 +642,148 @@ class BeatPlayer {
     }
 
     playHiHat(time) {
+        const noise = this.ctx.createBufferSource();
+        const bufferSize = this.ctx.sampleRate * 0.05;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        noise.buffer = buffer;
+
+        const noiseFilter = this.ctx.createBiquadFilter();
+        noiseFilter.type = 'highpass';
+        noiseFilter.frequency.value = 5000;
+        noise.connect(noiseFilter);
+
+        const noiseGain = this.ctx.createGain();
+        noiseGain.gain.setValueAtTime(0.3, time);
+        noiseGain.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(this.ctx.destination);
+        noise.start(time);
+    }
+
+    playHiHatOpen(time) {
+        const noise = this.ctx.createBufferSource();
+        const bufferSize = this.ctx.sampleRate * 0.3;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        noise.buffer = buffer;
+
+        const noiseFilter = this.ctx.createBiquadFilter();
+        noiseFilter.type = 'highpass';
+        noiseFilter.frequency.value = 5000;
+        noise.connect(noiseFilter);
+
+        const noiseGain = this.ctx.createGain();
+        noiseGain.gain.setValueAtTime(0.3, time);
+        noiseGain.gain.exponentialRampToValueAtTime(0.01, time + 0.3);
+        noiseFilter.connect(noiseGain);
+        noiseGain.connect(this.ctx.destination);
+        noise.start(time);
+    }
+
+    playBass(time) {
         const osc = this.ctx.createOscillator();
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(10000, time);
         const gain = this.ctx.createGain();
-        gain.gain.setValueAtTime(0.3, time);
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(60, time);
+        osc.frequency.exponentialRampToValueAtTime(40, time + 0.3);
+        
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 200;
+
+        gain.gain.setValueAtTime(0.6, time);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.3);
+        
+        osc.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start(time);
+        osc.stop(time + 0.3);
+    }
+
+    playChapg(time) {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(800, time);
+        osc.frequency.exponentialRampToValueAtTime(200, time + 0.1);
+        
+        const noise = this.ctx.createBufferSource();
+        const bufferSize = this.ctx.sampleRate * 0.05;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        noise.buffer = buffer;
+        
+        const noiseFilter = this.ctx.createBiquadFilter();
+        noiseFilter.type = 'bandpass';
+        noiseFilter.frequency.value = 1500;
+
+        gain.gain.setValueAtTime(0.8, time);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
+        
+        osc.connect(gain);
+        noise.connect(noiseFilter);
+        noiseFilter.connect(gain);
+        gain.connect(this.ctx.destination);
+        
+        osc.start(time);
+        osc.stop(time + 0.1);
+        noise.start(time);
+    }
+
+    playShaker(time) {
+        const noise = this.ctx.createBufferSource();
+        const bufferSize = this.ctx.sampleRate * 0.05;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        noise.buffer = buffer;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'highpass';
+        filter.frequency.setValueAtTime(8000, time);
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.2, time);
         gain.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        noise.start(time);
+    }
+
+    playClap(time) {
+        const noise = this.ctx.createBufferSource();
+        const bufferSize = this.ctx.sampleRate * 0.1;
+        const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+        const data = buffer.getChannelData(0);
+        for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+        noise.buffer = buffer;
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.value = 1200;
+        const gain = this.ctx.createGain();
+        gain.gain.setValueAtTime(0.6, time);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.1);
+        noise.connect(filter);
+        filter.connect(gain);
+        gain.connect(this.ctx.destination);
+        noise.start(time);
+    }
+
+    playTom(time) {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.frequency.setValueAtTime(200, time);
+        osc.frequency.exponentialRampToValueAtTime(80, time + 0.2);
+        gain.gain.setValueAtTime(0.7, time);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
         osc.connect(gain);
         gain.connect(this.ctx.destination);
         osc.start(time);
-        osc.stop(time + 0.05);
+        osc.stop(time + 0.2);
     }
 
     start(patternId) {
@@ -560,6 +823,7 @@ class App {
         this.metronome = new Metronome();
         this.songPlayer = new SongPlayer(this.engine, this.ui);
         this.beatPlayer = new BeatPlayer(this.engine.ctx);
+        window.appInstance = this; // Expose for engineTriggerDrum
         
         this.presets = {
             songs: {
@@ -574,7 +838,10 @@ class App {
                 'pop': { tone: 'classic' },
                 'rock': { tone: 'heavy' },
                 'techno': { tone: 'bright' },
-                'folk': { tone: 'warm' }
+                'folk': { tone: 'warm' },
+                'disco': { tone: 'bright' },
+                'retro': { tone: 'classic' },
+                'kuthu': { tone: 'heavy' }
             }
         };
 
@@ -803,7 +1070,7 @@ class App {
                 const item = e.target.closest('.recording-item');
                 const id = parseInt(item.dataset.id);
                 const rec = recordings.find(r => r.id === id);
-                if (rec) this.recorder.play(rec.sequence);
+                if (rec) this.recorder.play(rec.sequence, id);
             });
         });
 
