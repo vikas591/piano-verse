@@ -22,12 +22,15 @@ body {
     background-image: url('assets/background.png');
     background-size: cover;
     background-position: center;
-    background-attachment: fixed;
-    min-height: 100vh;
+    background-repeat: no-repeat;
+    /* Removed background-attachment: fixed as it breaks on many mobile browsers */
+    height: 100vh;
+    height: -webkit-fill-available;
     color: var(--text-color);
     margin: 0;
     padding: 0;
-    line-height: 1.5;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 
 .background-overlay {
@@ -60,6 +63,17 @@ header {
     background: linear-gradient(to bottom, rgba(15, 23, 42, 0.9) 0%, rgba(15, 23, 42, 0.4) 70%, transparent 100%);
     border-radius: 16px 16px 0 0;
     margin-bottom: 10px;
+}
+
+#main-logo {
+    height: 80px; /* Adjust based on generated image */
+    width: auto;
+    filter: drop-shadow(0 0 15px rgba(79, 172, 254, 0.4));
+    transition: transform 0.3s;
+}
+
+#main-logo:hover {
+    transform: scale(1.05);
 }
 
 .logo h1 {
@@ -342,6 +356,10 @@ input[type="range"] {
     perspective: 1000px;
 }
 
+.piano-keyboard.drum-mode {
+    justify-content: center;
+}
+
 .key {
     position: relative;
     user-select: none;
@@ -360,10 +378,8 @@ input[type="range"] {
 }
 
 .key.white:active, .key.white.active {
-    height: 245px;
     background: linear-gradient(to bottom, #fff 0%, #abe9cd 100%);
-    box-shadow: inset 0 0 10px rgba(0,0,0,0.2), 0 0 20px rgba(79, 172, 254, 0.5);
-    transform: rotateX(-5deg);
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.2), 0 0 20px rgba(79, 172, 254, 0.4);
 }
 
 .key.black {
@@ -379,10 +395,8 @@ input[type="range"] {
 }
 
 .key.black:active, .key.black.active {
-    height: 147px;
     background: linear-gradient(to bottom, #000 0%, #444 100%);
-    box-shadow: 0 0 15px rgba(79, 172, 254, 0.6);
-    transform: rotateX(-10deg);
+    box-shadow: 0 0 15px rgba(79, 172, 254, 0.5);
 }
 
 .key-label {
@@ -419,6 +433,12 @@ input[type="range"] {
     color: var(--primary-color);
 }
 
+.key-label.drum-label {
+    color: var(--primary-color);
+    font-weight: 800;
+    font-size: 0.6rem;
+}
+
 /* Responsive */
 @media (max-width: 900px) {
     .key.white { width: 45px; height: 180px; }
@@ -427,18 +447,29 @@ input[type="range"] {
 }
 
 @media (max-width: 600px) {
-    .app-container { padding: 20px 10px 100px 10px; width: 100%; }
-    .logo h1 { font-size: 2.22rem; }
-    .control-panel { gap: 15px; padding: 15px; }
+    .app-container { padding: 10px 10px 40px 10px; width: 100%; gap: 10px; }
+    header { padding: 10px 15px; margin-bottom: 5px; }
+    #main-logo { height: 40px; }
+    .control-panel { gap: 6px; padding: 10px; margin-bottom: 10px; }
     .control-group { width: 100%; }
-    .key.white { width: 35px; height: 140px; }
-    .key.black { width: 22px; height: 85px; margin-left: -11px; margin-right: -11px; }
+    .control-group label { font-size: 0.8rem; margin-bottom: 4px; }
+    
+    .key.white { width: 32px; height: 120px; }
+    .key.black { width: 20px; height: 75px; margin-left: -10px; margin-right: -10px; }
+    
+    #current-note-display { 
+        padding: 15px; 
+    }
+    #current-note { 
+        font-size: 2.5rem; 
+    }
+    
     .piano-wrapper { 
         width: 100%;
         overflow-x: auto; 
-        padding-bottom: 20px;
+        padding-bottom: 10px;
         -webkit-overflow-scrolling: touch;
     }
-    .piano-keyboard { min-width: 700px; }
+    .piano-keyboard { min-width: 600px; padding: 5px; }
     footer { display: none; }
 }
